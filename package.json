@@ -1,0 +1,14 @@
+{
+  "name": "footprint-daily",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "每日21:00生成当日足迹日报写入Notion（ActivityWatch 数据 + LLM）",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "report": "node src/main.mjs",
+    "probe": "node src/main.mjs --probe",
+    "dry": "node src/main.mjs --dry-run",
+    "yesterday-dry": "node src/main.mjs --yesterday --dry-run"
+  }
+}
