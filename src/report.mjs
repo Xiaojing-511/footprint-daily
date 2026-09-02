@@ -10,8 +10,12 @@ export function buildUserPrompt(data, notes, extras, config, weekday) {
   const browserDetail = data.browserDetail.length
     ? data.browserDetail.map((e) => "- " + e.time + " " + e.app + ": " + e.label).join("\n")
     : "- （未检测到浏览器扩展数据，已用窗口标题兜底）";
-  const timeline = data.windowTimeline.length
-    ? data.windowTimeline.map((e) => "- " + e.time + " " + e.app + ": " + e.label).join("\n")
+  const timeline = (data.timeline && data.timeline.length)
+    ? data.timeline.map((e) =>
+        e.kind === "sleep"
+          ? "- 🌙 " + e.from + " → " + e.to + " 无活动（自动判定为休眠/离开/长时间离机，" + e.gapMin + " 分钟）"
+          : "- " + e.time + " " + e.app + ": " + e.label
+      ).join("\n")
     : "- 无";
   const notesText = notes
     ? notes

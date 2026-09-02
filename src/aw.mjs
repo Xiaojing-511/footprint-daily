@@ -20,9 +20,10 @@ export const isWindowBucket = (id) => id.startsWith("aw-watcher-window_");
 export const isWebBucket = (id) => id.includes("aw-watcher-web");
 export const isAfkBucket = (id) => id.includes("aw-watcher-afk");
 
-/** 事件聚合成：应用时长、去重活跃时长、会话数、有序时间线 */
-export function aggregateEvents(events, { gapSeconds = 300 } = {}) {
+/** 事件聚合成：应用时长、去重活跃时长、会话数、有序时间线（noiseSet 内的应用在源头剔除，避免污染活跃时长与休眠检测） */
+export function aggregateEvents(events, { gapSeconds = 300, noiseSet = null } = {}) {
   const sorted = [...events]
+    .filter((e) => !(noiseSet && noiseSet.has(e.data?.app)))
     .map((e) => ({ ...e, start: new Date(e.timestamp).getTime() / 1000 }))
     .sort((a, b) => a.start - b.start);
 
@@ -125,8 +126,9 @@ export async function collectDayData(dateStr, config, offsetHours) {
     Promise.all(afkBuckets.map((b) => getBucketEvents(b.id, start, end))).then((a) => a.flat())
   ]);
 
-  const windowAgg = aggregateEvents(windowEvents, { gapSeconds: config.focus.gapSeconds });
-  const webAgg = aggregateEvents(webEvents, { gapSeconds: config.focus.gapSeconds });
+  const noise = new Set([...(config.noiseApps || []), "loginwindow"]);
+  const windowAgg = aggregateEvents(windowEvents, { gapSeconds: config.focus.gapSeconds, noiseSet: noise });
+  const webAgg = aggregateEvents(webEvents, { gapSeconds: config.focus.gapSeconds, noiseSet: noise });
 
   // afk：not-afk 时长 = 活跃
   let afkSeconds = null;
@@ -135,19 +137,17 @@ export async function collectDayData(dateStr, config, offsetHours) {
     afkSeconds = notAfk.reduce((a, e) => a + (e.duration || 0), 0);
   }
 
-  const noise = new Set(config.noiseApps || []);
-  const topApps = windowAgg.topApps.filter((x) => !noise.has(x.app)).slice(0, 12);
-  const topTitles = windowAgg.topTitles
-    .filter((x) => !noise.has(x.key.split("｜")[0]))
-    .slice(0, 25);
+  const topApps = windowAgg.topApps.slice(0, 12);
+  const topTitles = windowAgg.topTitles.slice(0, 25);
 
-  const windowTimeline = windowAgg.entries
-    .filter((e) => !noise.has(e.app) && (e.title || e.url))
-    .map((e) => ({ time: fmtLocal(e.time, offsetHours), app: e.app, label: (e.title || e.url || "").slice(0, 120) }))
-    .slice(0, 60);
   const browserDetail = webAgg.entries
     .map((e) => ({ time: fmtLocal(e.time, offsetHours), app: "浏览器", label: ((e.title || "") + (e.url ? " [" + e.url + "]" : "")).slice(0, 150) }))
     .slice(0, 40);
+
+  // 带休眠标注的时间线：两条记录之间无活动超过 sleepGapSeconds 时插入「休眠/离开」标记
+  const sleepGap = config.focus?.sleepGapSeconds ?? 3600;
+  const timeline = annotateTimeline(windowAgg.entries, noise, offsetHours, sleepGap).slice(0, 80);
+  const sleepSegs = timeline.filter((x) => x.kind === "sleep");
 
   return {
     dateStr,
@@ -161,7 +161,8 @@ export async function collectDayData(dateStr, config, offsetHours) {
     topApps,
     topTitles,
     browserDetail,
-    windowTimeline,
+    timeline,
+    sleepSegments: sleepSegs.length,
     // 数据面板字符串（本地算，不给 LLM 编造空间）
     panel: {
       total: fmtHourMin(windowAgg.totalSeconds),
@@ -171,7 +172,46 @@ export async function collectDayData(dateStr, config, offsetHours) {
       topContents: topTitles.slice(0, 8).map((x) => x.key.replace("｜", " — ") + "（" + fmtMin(x.seconds) + "min）").join("\n") || "无",
       activeRatio: windowAgg.totalSeconds > 0
         ? Math.round(((afkSeconds ?? windowAgg.activeSeconds) / Math.max(windowAgg.totalSeconds, 1)) * 100) + "%"
-        : "—"
+        : "—",
+      sleep: sleepSegs.length
+        ? sleepSegs.length + " 段（共 " + fmtHourMin(sleepSegs.reduce((a, s) => a + s.gapMin * 60, 0)) + "）"
+        : "无"
     }
   };
+}
+
+/**
+ * 时间线标注：活动条目之间无活动超过阈值时插入「休眠/离开」段。
+ * entries: aggregateEvents 的 entries（含 start 秒级时间戳）
+ */
+function annotateTimeline(entries, noiseSet, offsetHours, sleepGapSeconds) {
+  const acts = entries
+    .filter((e) => !noiseSet.has(e.app) && (e.title || e.url))
+    .map((e) => ({
+      start: e.start,
+      end: e.start + (e.duration || 0),
+      app: e.app,
+      label: (e.title || e.url || "").slice(0, 120)
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  const out = [];
+  let prevEnd = null;
+  const toISO = (sec) => new Date(sec * 1000).toISOString();
+  for (const a of acts) {
+    if (prevEnd !== null) {
+      const gap = a.start - prevEnd;
+      if (gap > sleepGapSeconds) {
+        out.push({
+          kind: "sleep",
+          from: fmtLocal(toISO(prevEnd), offsetHours),
+          to: fmtLocal(toISO(a.start), offsetHours),
+          gapMin: Math.round(gap / 60)
+        });
+      }
+    }
+    out.push({ kind: "act", time: fmtLocal(toISO(a.start), offsetHours), app: a.app, label: a.label });
+    prevEnd = a.end;
+  }
+  return out;
 }

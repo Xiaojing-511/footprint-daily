@@ -32,8 +32,11 @@ log("AW 数据: 总时长 " + data.panel.total + " | 活跃 " + data.panel.activ
 if (probe) {
   console.log("===== 数据面板（probe，仅本地数据，不调 LLM）=====");
   console.log(renderPanel(data.panel));
-  console.log("===== 时间线（前 30 条）=====");
-  for (const e of data.windowTimeline.slice(0, 30)) console.log(e.time, e.app, "|", e.label);
+  console.log("===== 时间线（前 40 条，含休眠标注）=====");
+  for (const e of data.timeline.slice(0, 40)) {
+    if (e.kind === "sleep") console.log("🌙", e.from, "→", e.to, "休眠/离开", e.gapMin + "min");
+    else console.log(e.time, e.app, "|", e.label);
+  }
   process.exit(0);
 }
 
@@ -135,6 +138,7 @@ function renderPanel(p) {
   return "- 总记录时长: " + p.total +
     "\n- 去重活跃时长: " + p.active + "（活跃占比 " + p.activeRatio + "）" +
     "\n- 连续工作时段: " + p.sessions + " 个" +
+    "\n- 休眠/离开: " + (p.sleep || "无") +
     "\n- Top 应用: " + p.topApps +
     "\n- Top 内容: " + p.topContents;
 }

@@ -25,6 +25,7 @@ function renderPanel(panel) {
     "- 总记录时长: " + panel.total,
     "- 去重活跃时长: " + panel.active + "（活跃占比 " + panel.activeRatio + "）",
     "- 连续工作时段: " + panel.sessions + " 个",
+    "- 休眠/离开: " + (panel.sleep || "无"),
     "- Top 应用: " + panel.topApps,
     "- Top 内容: " + panel.topContents
   ].join("\n");
