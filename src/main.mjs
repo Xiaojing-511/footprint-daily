@@ -3,7 +3,7 @@ import { loadEnv, loadConfig, log, tzOffsetHours, localToday, localYesterday, we
 import { collectDayData } from "./aw.mjs";
 import { gitCommits, shellHistory } from "./collect.mjs";
 import { generateReport } from "./report.mjs";
-import { createReportPage, findPageByDate, buildBlocks, getPageBlocks, extractTodayNotes } from "./notion.mjs";
+import { createReportPage, findPageByDate, buildBlocks, getPageBlocks, extractTodayNotes, archiveBlock } from "./notion.mjs";
 
 loadEnv();
 const config = loadConfig();
@@ -77,6 +77,23 @@ if (!process.env.LLM_API_KEY) {
   process.exit(2);
 }
 
+// 4.5) 提前查重（避免重复调 LLM / 重复写入；定时任务的重试轮次会因此变得廉价）
+let existingPage = null;
+if (!dryRun) {
+  if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
+    console.error("未配置 NOTION_TOKEN / NOTION_DATABASE_ID（见 .env.example 与 README 指引）");
+    process.exit(2);
+  }
+  existingPage = await findPageByDate({
+    databaseId: process.env.NOTION_DATABASE_ID, token: process.env.NOTION_TOKEN,
+    dateStr, propDate: config.notion.propDate
+  });
+  if (existingPage && !force) {
+    console.log("当天日报已存在: " + (existingPage.url || existingPage.id) + "（--force 可覆盖重写）");
+    process.exit(0);
+  }
+}
+
 // 5) LLM 生成
 log("调用 LLM 生成日报 ...");
 const gen = await generateReport({ data, notes, extras, config, weekday: weekdayCN(dateStr) });
@@ -100,20 +117,11 @@ if (dryRun) {
   process.exit(0);
 }
 
-// 7) 写入 Notion
-if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
-  console.error("未配置 NOTION_TOKEN / NOTION_DATABASE_ID（见 .env.example 与 README 指引）");
-  process.exit(2);
+// 7) 写入 Notion（查重已在 LLM 前完成；--force 时先归档旧页再新建）
+if (existingPage && force) {
+  await archiveBlock(process.env.NOTION_TOKEN, existingPage.id);
+  log("已归档旧日报: " + existingPage.id);
 }
-const existing = await findPageByDate({
-  databaseId: process.env.NOTION_DATABASE_ID, token: process.env.NOTION_TOKEN,
-  dateStr, propDate: config.notion.propDate
-});
-if (existing && !force) {
-  console.log("当天日报已存在: " + (existing.url || existing.id) + "（--force 可重写）");
-  process.exit(0);
-}
-
 const blocks = buildBlocks(report, data.panel);
 const res = await createReportPage({
   databaseId: process.env.NOTION_DATABASE_ID, token: process.env.NOTION_TOKEN,

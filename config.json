@@ -72,7 +72,7 @@
     "propTitle": "Name",
     "propStatus": "状态"
   },
-  "notesNotion": { "pageId": "" },
+  "notesNotion": { "pageId": "3ce71c40-28c1-8055-8631-d77edebe936b" },
   "prompt": {
     "system": "你是一位严谨的学习复盘教练。根据用户提供的 ActivityWatch 客观数据（时间线、应用、网页标题）和用户手记，生成一份当日“足迹”日报。要求：1) 只依据给定材料，不编造没发生的事；2) 从带时间戳的时间线中识别“从一个小问题/思路如何延伸到其他问题”的链条；3) 效率与学习质量建议要具体、可执行，指出问题而非泛泛而谈；4) 用简体中文，语气诚恳直接；5) 严格输出 JSON。",
     "userTemplate": "## 日期\n{date}（{weekday}）\n\n## ActivityWatch 客观数据\n总记录时长 {totalMinutes} 分钟，去重后活跃时长约 {activeMinutes} 分钟，{sessionCount} 个连续工作时段。\n\n### 应用时长 TOP\n{topApps}\n\n### 内容/页面 TOP（窗口标题与网页）\n{topTitles}\n\n### 浏览器页面明细（时间顺序）\n{browserDetail}\n\n### 当日时间线（按时间顺序）\n{timeline}\n\n## 用户手记\n{notes}\n\n## 补充素材\n{extras}\n\n## 输出要求\n输出 JSON，字段如下：\n{\n  \"title\": \"一句话标题\",\n  \"summary\": \"当日整体概括（80字内）\"),\n  \"learned\": \"今天学习了什么：列出知识点/文档/文章，标注来源（页面或应用）\",\n  \"practiced\": \"今天实践了什么：做了什么、产出什么\",\n  \"extensions\": \"思路延伸：从哪个小问题/小思路出发，如何延伸到哪些其他问题，链条尽量按时间还原\",\n  \"efficiency\": \"效率与学习质量优化建议：2-4条，结合数据指出具体问题（如碎片时间、上下文切换、某类内容耗时占比过高）并给出可执行建议\"\n}\n所有内容字段用 Markdown（可用短列表），不要输出字段以外的键。"

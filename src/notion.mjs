@@ -60,6 +60,12 @@ export async function findPageByDate({ databaseId, token, dateStr, propDate }) {
   return j.results?.[0] || null;
 }
 
+/** 归档（删除）页面或块 */
+export async function archiveBlock(token, id) {
+  const r = await fetch(API + "/blocks/" + id, { method: "DELETE", headers: headers(token) });
+  return r.ok;
+}
+
 /** 创建日报页面（429/5xx 指数退避重试） */
 export async function createReportPage({ databaseId, token, dateStr, title, blocks, props }) {
   const body = {

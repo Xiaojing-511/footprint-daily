@@ -69,28 +69,36 @@ export async function generateReport({ data, notes, extras, config, weekday }) {
   const url = baseUrl + "/chat/completions";
   log("LLM 请求: " + provider + " / " + model);
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  const backoff = [0, 5000, 15000, 30000]; // 第 n 次失败后的等待
+  for (let attempt = 1; attempt <= 3; attempt++) {
     let r;
     try {
-      r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-        body: JSON.stringify(body)
-      });
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 90000); // 90s 超时保护
+      try {
+        r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+          body: JSON.stringify(body),
+          signal: ac.signal
+        });
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (e) {
-      if (attempt === 1) { await sleep(3000); continue; }
+      if (attempt < 3) { log("LLM 网络失败(" + attempt + "/3)，" + backoff[attempt + 1] / 1000 + "s 后重试: " + String(e).slice(0, 120)); await sleep(backoff[attempt + 1]); continue; }
       return { ok: false, reason: "LLM_NETWORK", message: String(e).slice(0, 300) };
     }
     if (!r.ok) {
       const t = await r.text().catch(() => "");
-      if (attempt === 1 && (r.status === 429 || r.status >= 500)) { await sleep(5000); continue; }
+      if (attempt < 3 && (r.status === 429 || r.status >= 500)) { log("LLM HTTP " + r.status + "(" + attempt + "/3)，" + backoff[attempt + 1] / 1000 + "s 后重试"); await sleep(backoff[attempt + 1]); continue; }
       return { ok: false, reason: "LLM_HTTP_" + r.status, message: t.slice(0, 500) };
     }
     const j = await r.json();
     const content = j.choices?.[0]?.message?.content || "";
     const parsed = parseReportJson(content);
     if (parsed.ok) return { ok: true, report: parsed.report, raw: content };
-    if (attempt === 1) continue;
+    if (attempt < 3) { log("LLM JSON 解析失败(" + attempt + "/3)，重试中..."); continue; }
     return { ok: false, reason: "LLM_JSON_PARSE", message: content.slice(0, 800) };
   }
   return { ok: false, reason: "UNREACHABLE", message: "内部错误" };
