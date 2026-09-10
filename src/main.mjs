@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import { loadEnv, loadConfig, log, tzOffsetHours, localToday, localYesterday, weekdayCN, dayRange, fmtLocal } from "./lib.mjs";
 import { collectDayData } from "./aw.mjs";
 import { gitCommits, shellHistory } from "./collect.mjs";
@@ -24,8 +25,33 @@ const noExtras = flag("--no-extras");
 
 log("足迹日报 · 日期 = " + dateStr + " · dry-run = " + dryRun + " · probe = " + probe);
 
-// 1) ActivityWatch 数据
-const data = await collectDayData(dateStr, config, offset);
+// 0) 小工具
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 1) ActivityWatch 数据（不可达时自动拉起 AW 并重试，避免整日无数据）
+let data;
+try {
+  data = await collectDayData(dateStr, config, offset);
+} catch (e) {
+  const msg = String((e && e.message) || e);
+  const isDown = /ECONNREFUSED|fetch failed|ENOTFOUND|socket hang up/i.test(msg);
+  if (!isDown) {
+    console.error("采集 ActivityWatch 数据失败: " + msg.slice(0, 200));
+    process.exit(1);
+  }
+  log("⚠ ActivityWatch 不可达（localhost:5600），尝试自动拉起 ...");
+  try { execFileSync("open", ["-a", "ActivityWatch"]); } catch { /* 忽略 */ }
+  let recovered = false;
+  for (let i = 0; i < 8; i++) {
+    await sleep(4000);
+    try { data = await collectDayData(dateStr, config, offset); recovered = true; break; } catch { /* 继续等待 */ }
+  }
+  if (!recovered) {
+    console.error("❌ ActivityWatch 仍不可达（localhost:5600），今日跳过生成。请手动打开 ActivityWatch。");
+    process.exit(3);
+  }
+  log("✅ ActivityWatch 已恢复，继续生成日报");
+}
 log("AW 数据: 总时长 " + data.panel.total + " | 活跃 " + data.panel.active +
   " | 会话 " + data.panel.sessions + " | 窗口桶: " + (data.windowBuckets.join(",") || "无"));
 

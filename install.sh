@@ -5,12 +5,16 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 LABEL="com.zhangjingjing.footprint-daily"
 PLIST_SRC="$HERE/plist/$LABEL.plist"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WATCH_LABEL="com.zhangjingjing.aw-watchdog"
+WATCH_SRC="$HERE/plist/$WATCH_LABEL.plist"
+WATCH="$HOME/Library/LaunchAgents/$WATCH_LABEL.plist"
 LOG_DIR="$HOME/Library/Logs/footprint-daily"
 
 if [ "${1:-}" = "uninstall" ]; then
   launchctl unload "$PLIST" 2>/dev/null || true
-  rm -f "$PLIST"
-  echo "已卸载定时任务 $LABEL"
+  launchctl unload "$WATCH" 2>/dev/null || true
+  rm -f "$PLIST" "$WATCH"
+  echo "已卸载定时任务与 AW 保活守护"
   exit 0
 fi
 
@@ -28,6 +32,16 @@ sed -e "s|__NODE_BIN__|$NODE_BIN|g" \
 
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
-echo "✅ 已安装定时任务: 每天 21:00 生成当天足迹日报 ($HERE)"
-echo "   日志: $LOG_DIR/stdout.log / stderr.log"
+
+# ActivityWatch 保活守护：每 5 分钟检查，掉线自动拉起
+sed -e "s|__WATCHDOG_SH__|$HERE/scripts/aw-watchdog.sh|g" \
+    -e "s|__LOG_DIR__|$LOG_DIR|g" \
+    "$WATCH_SRC" > "$WATCH"
+chmod +x "$HERE/scripts/aw-watchdog.sh"
+launchctl unload "$WATCH" 2>/dev/null || true
+launchctl load "$WATCH"
+
+echo "✅ 已安装定时任务: 每天 21:00/21:30/22:00 生成当天足迹日报 ($HERE)"
+echo "✅ 已安装 ActivityWatch 保活守护: 每 5 分钟检查，掉线自动拉起"
+echo "   日志: $LOG_DIR/stdout.log / stderr.log / aw-watchdog.log"
 echo "   卸载: $0 uninstall"
